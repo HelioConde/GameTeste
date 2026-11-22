@@ -1,0 +1,125 @@
+name: PixelLab — primeira geração do herói
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/pixellab-requests/hero-core-20261122.json"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: pixellab-hero-core-20261122
+  cancel-in-progress: false
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Baixar GameTeste
+        uses: actions/checkout@v4
+
+      - name: Evitar geração repetida
+        id: guard
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          BRANCH="assets/pixellab-hero-core-20261122"
+          if gh api "repos/${{ github.repository }}/branches/assets%2Fpixellab-hero-core-20261122" >/dev/null 2>&1; then
+            echo "already_generated=true" >> "$GITHUB_OUTPUT"
+            echo "Entrega já existe; nenhuma nova chamada de API será feita"
+          else
+            echo "already_generated=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Configurar Python
+        if: steps.guard.outputs.already_generated != 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar Pillow
+        if: steps.guard.outputs.already_generated != 'true'
+        run: python -m pip install "Pillow>=11,<13"
+
+      - name: Validar pipeline PixelLab sem créditos
+        if: steps.guard.outputs.already_generated != 'true'
+        run: |
+          python -m unittest discover -s tests -p 'test_pixellab*.py' -v
+          python tools/generate_pixellab.py --target hero --set core --dry-run
+
+      - name: Verificar segredo e autenticação PixelLab sem gerar imagens
+        if: steps.guard.outputs.already_generated != 'true'
+        env:
+          PIXELLAB_API_KEY: ${{ secrets.PIXELLAB_API_KEY }}
+        run: |
+          if [ -z "$PIXELLAB_API_KEY" ]; then
+            echo "::error::PIXELLAB_API_KEY não configurado nos secrets de Actions."
+            exit 1
+          fi
+          python - <<'PY'
+          import os
+          import urllib.request
+          import urllib.error
+          token = os.environ["PIXELLAB_API_KEY"]
+          request = urllib.request.Request(
+              "https://api.pixellab.ai/v2/balance",
+              headers={"Authorization": "Bearer " + token, "Accept": "application/json"},
+          )
+          try:
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  if response.status != 200:
+                      raise RuntimeError("Unexpected balance response")
+              print("PixelLab: autenticado (saldo consultado, sem geração).")
+          except urllib.error.HTTPError as error:
+              raise SystemExit(f"PixelLab: HTTP {error.code} ao verificar credenciais.")
+          PY
+
+      - name: Gerar herói (idle, run, attack)
+        id: generation
+        if: steps.guard.outputs.already_generated != 'true'
+        continue-on-error: true
+        env:
+          PIXELLAB_API_KEY: ${{ secrets.PIXELLAB_API_KEY }}
+        run: python tools/generate_pixellab.py --target hero --set core
+
+      - name: Armazenar PNGs produzidos
+        if: always() && steps.guard.outputs.already_generated != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: pixellab-hero-core-${{ github.run_id }}
+          path: assets/pixellab/hero/
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Criar PR dos sprites para avaliação
+        if: always() && steps.generation.outcome != 'skipped'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/pixellab/hero/ || true
+          if git diff --staged --quiet; then
+            echo "Nenhum PNG para enviar."
+            exit 0
+          fi
+          BRANCH="assets/pixellab-hero-core-20261122"
+          git switch -c "$BRANCH"
+          git commit -m "art: herói PixelLab idle, run e attack (run $RUN_ID)"
+          git push origin "$BRANCH"
+          if ! gh pr create --base main --head "$BRANCH" \
+            --title "art: sprites PixelLab do herói — revisão visual" \
+            --body "Sprites gerados pela API PixelLab. Revisar PNGs antes do merge. Action: https://github.com/${{ github.repository }}/actions/runs/$RUN_ID."; then
+            echo "::warning::Branch enviada; abra PR manualmente se o token não tiver permissão para criar."
+          fi
+
+      - name: Reportar geração incompleta
+        if: steps.generation.outcome == 'failure'
+        run: |
+          echo "::error::PixelLab falhou; confira os PNGs que foram produzidos no artefato/branch."
+          exit 1
