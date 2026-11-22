@@ -6,6 +6,7 @@ const RUN_SPEED := 300.0
 const JUMP_VELOCITY := -560.0
 const GRAVITY := 1350.0
 const DASH_SPEED := 820.0
+const PIXEL_SPRITE = preload("res://scripts/pixel_sprite.gd")
 
 var max_health := 100
 var health := 100
@@ -29,6 +30,7 @@ var attack_hit := false
 var combo_step := 0
 var combo_window := 0.0
 var run_clock := 0.0
+var pixel_sprite: Node2D
 
 func _ready() -> void:
 	name = "Hero"
@@ -51,6 +53,9 @@ func _ready() -> void:
 	camera.position_smoothing_speed = 6.0
 	add_child(camera)
 	camera.make_current()
+	pixel_sprite = PIXEL_SPRITE.new()
+	pixel_sprite.setup("hero")
+	add_child(pixel_sprite)
 
 func _physics_process(delta: float) -> void:
 	invulnerability = maxf(0.0, invulnerability - delta)
@@ -65,6 +70,7 @@ func _physics_process(delta: float) -> void:
 	if not alive:
 		velocity.x = move_toward(velocity.x, 0.0, 900.0 * delta)
 		move_and_slide()
+		_update_pixel_sprite()
 		queue_redraw()
 		return
 
@@ -105,6 +111,7 @@ func _physics_process(delta: float) -> void:
 	move_and_slide()
 	position.x = clampf(position.x, 30.0, 3170.0)
 	run_clock += delta * absf(velocity.x) / RUN_SPEED
+	_update_pixel_sprite()
 	queue_redraw()
 
 func _begin_attack(kind: String) -> void:
@@ -172,7 +179,37 @@ func grant_reward(points: int) -> void:
 		health = mini(max_health, health + 28)
 		mana = minf(max_mana, mana + 20.0)
 
+func _update_pixel_sprite() -> void:
+	if pixel_sprite == null or not pixel_sprite.visible:
+		return
+	var state := "idle"
+	if not alive:
+		state = "hit"
+	elif skill_flash > 0.0:
+		state = "skill"
+	elif attack_time > 0.0:
+		state = "heavy" if attack_kind == "heavy" else "attack"
+	elif dash_time > 0.0:
+		state = "dash"
+	elif not is_on_floor():
+		state = "jump"
+	elif absf(velocity.x) > 18.0:
+		state = "run"
+	pixel_sprite.call("show_state", state, facing)
+	pixel_sprite.modulate.a = 0.42 if invulnerability > 0.0 and int(invulnerability * 16.0) % 2 == 0 else 1.0
+
 func _draw() -> void:
+	if pixel_sprite != null and pixel_sprite.visible:
+		draw_ellipse_shadow()
+		if attack_time > 0.0:
+			var starting_angle := -1.45 if facing > 0 else 1.7
+			draw_arc(Vector2(13 * facing, -12), 68.0, starting_angle, starting_angle + 2.2, 22, Color("#7fd8ff"), 7.0, true)
+		if skill_flash > 0.0:
+			draw_arc(Vector2(0, -7), 160.0 * (1.0 - skill_flash * 0.7), 0.0, TAU, 50, Color(0.38, 0.84, 1.0, skill_flash * 1.8), 8.0, true)
+		if dash_time > 0.0:
+			draw_line(Vector2(-50 * facing, -5), Vector2(-16 * facing, -5), Color("#7fd8ff"), 9.0)
+		return
+
 	var cape := Color("#713ec5")
 	var armor := Color("#2a4f8f")
 	var glow := Color("#7fd8ff")

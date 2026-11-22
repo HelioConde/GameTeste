@@ -3,6 +3,7 @@ extends CharacterBody2D
 signal defeated(experience_points: int)
 
 const GRAVITY := 1350.0
+const PIXEL_SPRITE = preload("res://scripts/pixel_sprite.gd")
 
 var wave_level := 1
 var elite := false
@@ -16,6 +17,7 @@ var cooldown := 0.75
 var windup := 0.0
 var stagger := 0.0
 var animation_clock := 0.0
+var pixel_sprite: Node2D
 
 func configure(wave: int, is_elite: bool) -> void:
 	wave_level = wave
@@ -35,6 +37,10 @@ func _ready() -> void:
 	var collider := CollisionShape2D.new()
 	collider.shape = shape
 	add_child(collider)
+	pixel_sprite = PIXEL_SPRITE.new()
+	pixel_sprite.setup("enemy")
+	pixel_sprite.scale = Vector2(1.19, 1.19) if elite else Vector2.ONE
+	add_child(pixel_sprite)
 
 func _physics_process(delta: float) -> void:
 	if not alive:
@@ -70,6 +76,7 @@ func _physics_process(delta: float) -> void:
 			cooldown = 1.35
 
 	move_and_slide()
+	_update_pixel_sprite()
 	queue_redraw()
 
 func take_hit(amount: int, impulse: Vector2) -> void:
@@ -83,11 +90,32 @@ func take_hit(amount: int, impulse: Vector2) -> void:
 		queue_free()
 		return
 	stagger = 0.20
+	if pixel_sprite != null and pixel_sprite.visible:
+		pixel_sprite.call("show_state", "hit", facing)
 	windup = 0.0
 	velocity = impulse
 	queue_redraw()
 
+func _update_pixel_sprite() -> void:
+	if pixel_sprite == null or not pixel_sprite.visible:
+		return
+	var state := "idle"
+	if windup > 0.0:
+		state = "attack"
+	elif stagger > 0.0:
+		state = "hit"
+	elif absf(velocity.x) > 15.0:
+		state = "run"
+	pixel_sprite.call("show_state", state, facing)
+
 func _draw() -> void:
+	if pixel_sprite != null and pixel_sprite.visible:
+		if windup > 0.0:
+			draw_arc(Vector2(0, -9), 42.0, -1.8, 1.8, 20, Color("#ff716e"), 4.0)
+		draw_rect(Rect2(-23, -69, 46, 5), Color("#292b3c"))
+		draw_rect(Rect2(-22, -68, 44.0 * float(health) / float(max_health), 3), Color("#f16c78"))
+		return
+
 	var scale_factor := 1.19 if elite else 1.0
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2(scale_factor, scale_factor))
 	var stride := sin(animation_clock * 8.0) * 3.0 if absf(velocity.x) > 10.0 else 0.0
