@@ -28,6 +28,17 @@ Projeto **Godot 4.7.2** em desenvolvimento, inspirado na dinâmica de ação, co
 | Especial em área | L (consome 35 de energia) |
 | Reiniciar após perder | R ou Enter |
 
+## Sprites com PixelLab
+
+O projeto está preparado para usar **sprites PNG originais gerados pelo PixelLab** para herói e inimigos, com animações de corrida e ataques, mantendo os desenhos existentes como fallback.
+
+1. Coloque seu token da API do PixelLab como segredo `PIXELLAB_API_KEY` em **Settings → Secrets and variables → Actions**.
+2. Abra a Action **PixelLab — gerar sprites e criar PR** e execute primeiro com `generate=false` (simulação gratuita).
+3. Para gerar os sprites reais, execute novamente com `generate=true`. **A geração consome créditos da conta PixelLab**.
+4. Confira os PNGs no artefato/PR produzidos pela Action. Após a integração da PR, o Godot usa as animações na versão Web.
+
+Detalhes: [assets/pixellab/README.md](assets/pixellab/README.md).
+
 ## Testar localmente
 
 ~~~sh
